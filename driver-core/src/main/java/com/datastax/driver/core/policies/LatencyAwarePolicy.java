@@ -15,6 +15,7 @@
  */
 package com.datastax.driver.core.policies;
 
+import com.codahale.metrics.Gauge;
 import com.datastax.driver.core.*;
 import com.datastax.driver.core.exceptions.*;
 import com.google.common.annotations.VisibleForTesting;
@@ -72,6 +73,10 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
     private final long scale;
     private final long retryPeriod;
     private final long minMeasure;
+
+    private final Map<Host, Boolean> isIncluded = new ConcurrentHashMap<Host, Boolean>();
+
+    private volatile Metrics metrics;
 
     private LatencyAwarePolicy(LoadBalancingPolicy childPolicy,
                                double exclusionThreshold,
@@ -176,6 +181,18 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
     public void init(Cluster cluster, Collection<Host> hosts) {
         childPolicy.init(cluster, hosts);
         cluster.register(latencyTracker);
+
+        metrics = cluster.getMetrics();
+        if (metrics != null) {
+            metrics.getRegistry().register(
+                    "LatencyAwarePolicy.latencies.min",
+                    new Gauge<Long>() {
+                        @Override
+                        public Long getValue() {
+                            return latencyTracker.getMinAverage();
+                        }
+                    });
+        }
     }
 
     /**
@@ -219,21 +236,60 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
 
                     // If we haven't had enough data point yet to have a score, or the last update of the score
                     // is just too old, include the host.
-                    if (min < 0 || latency == null || latency.nbMeasure < minMeasure || (now - latency.timestamp) > retryPeriod)
+                    if (min < 0 || latency == null || latency.nbMeasure < minMeasure || (now - latency.timestamp) > retryPeriod) {
+                        if (metrics != null) {
+                            metrics.getRegistry()
+                                    .counter(MetricsUtil.hostMetricName("LatencyAwarePolicy.inclusions-nodata.", host))
+                                    .inc();
+                            Boolean old = isIncluded.put(host, true);
+                            if (old != null && !old) {
+                                metrics.getRegistry()
+                                        .meter(MetricsUtil.hostMetricName("LatencyAwarePolicy.flip.", host))
+                                        .mark();
+                            }
+                        }
                         return host;
+                    }
 
                     // If the host latency is within acceptable bound of the faster known host, return
                     // that host. Otherwise, skip it.
-                    if (latency.average <= ((long) (exclusionThreshold * (double) min)))
+                    if (latency.average <= ((long) (exclusionThreshold * (double) min))) {
+                        if (metrics != null) {
+                            metrics.getRegistry()
+                                    .counter(MetricsUtil.hostMetricName("LatencyAwarePolicy.inclusions.", host))
+                                    .inc();
+                            Boolean old = isIncluded.put(host, true);
+                            if (old != null && !old) {
+                                metrics.getRegistry()
+                                        .meter(MetricsUtil.hostMetricName("LatencyAwarePolicy.flip.", host))
+                                        .mark();
+                            }
+                        }
                         return host;
+                    }
 
-                    if (skipped == null)
+                    // Else skip the host
+                    isIncluded.put(host, false);
+                    if (skipped == null) {
                         skipped = new ArrayDeque<Host>();
+                    }
                     skipped.offer(host);
+                    if (metrics != null) {
+                        metrics.getRegistry()
+                                .counter(MetricsUtil.hostMetricName("LatencyAwarePolicy.exclusions.", host))
+                                .inc();
+                    }
                 }
 
-                if (skipped != null && !skipped.isEmpty())
-                    return skipped.poll();
+                if (skipped != null && !skipped.isEmpty()) {
+                    Host host = skipped.poll();
+                    if (metrics != null) {
+                        metrics.getRegistry()
+                                .counter(MetricsUtil.hostMetricName("LatencyAwarePolicy.hits-while-excluded.", host))
+                                .inc();
+                    }
+                    return host;
+                }
 
                 return endOfData();
             }
@@ -256,8 +312,10 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
         for (Map.Entry<Host, TimestampedAverage> entry : currentLatencies.entrySet()) {
             Host host = entry.getKey();
             TimestampedAverage latency = entry.getValue();
-            Snapshot.Stats stats = new Snapshot.Stats(now - latency.timestamp, latency.average, latency.nbMeasure);
-            builder.put(host, stats);
+            if (latency != null) {
+                Snapshot.Stats stats = new Snapshot.Stats(now - latency.timestamp, latency.average, latency.nbMeasure);
+                builder.put(host, stats);
+            }
         }
         return new Snapshot(builder.build());
     }
@@ -384,7 +442,7 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
         private volatile long cachedMin = -1L;
 
         @Override
-        public void update(Host host, Statement statement, Exception exception, long newLatencyNanos) {
+        public void update(final Host host, Statement statement, Exception exception, long newLatencyNanos) {
             if (shouldConsiderNewLatency(statement, exception)) {
                 HostLatencyTracker hostTracker = latencies.get(host);
                 if (hostTracker == null) {
@@ -392,6 +450,18 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
                     HostLatencyTracker old = latencies.putIfAbsent(host, hostTracker);
                     if (old != null)
                         hostTracker = old;
+                    if (metrics != null) {
+                        logger.info("Adding gauge LatencyAwarePolicy.latencies." + host.getSocketAddress());
+                        metrics.getRegistry().register(
+                                MetricsUtil.hostMetricName("LatencyAwarePolicy.latencies.", host),
+                                new Gauge<Long>() {
+                                    @Override
+                                    public Long getValue() {
+                                        TimestampedAverage latency = latencyTracker.latencyOf(host);
+                                        return (latency == null) ? -1 : latency.average;
+                                    }
+                                });
+                    }
                 }
                 hostTracker.add(newLatencyNanos);
             }

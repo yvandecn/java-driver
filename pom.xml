@@ -134,6 +134,12 @@
             </dependency>
 
             <dependency>
+                <groupId>com.addthis.metrics</groupId>
+                <artifactId>reporter-config3</artifactId>
+                <version>3.1.0</version>
+            </dependency>
+
+            <dependency>
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>
                 <version>${slf4j.version}</version>
