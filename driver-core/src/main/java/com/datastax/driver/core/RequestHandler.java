@@ -269,6 +269,11 @@ class RequestHandler {
             try {
                 Host host;
                 while (!isDone.get() && (host = queryPlan.next()) != null && !queryStateRef.get().isCancelled()) {
+                    if (metricsEnabled()) {
+                        metrics().getRegistry()
+                                .counter("LoadBalancingPolicy.hits." + host.getSocketAddress())
+                                .inc();
+                    }
                     if (query(host))
                         return;
                 }
