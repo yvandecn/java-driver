@@ -271,7 +271,7 @@ class RequestHandler {
                 while (!isDone.get() && (host = queryPlan.next()) != null && !queryStateRef.get().isCancelled()) {
                     if (metricsEnabled()) {
                         metrics().getRegistry()
-                                .counter("LoadBalancingPolicy.hits." + host.getSocketAddress())
+                                .counter(MetricsUtil.hostMetricName("LoadBalancingPolicy.hits.", host))
                                 .inc();
                     }
                     if (query(host))
