@@ -18,6 +18,8 @@ package com.datastax.driver.core.policies;
 import com.datastax.driver.core.*;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Lists;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -46,8 +48,18 @@ import java.util.*;
  */
 public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
 
+    private static final Logger LOG = LoggerFactory.getLogger(TokenAwarePolicy.class);
+    private static final boolean POWER_OF_TWO_CHOICES = Boolean.getBoolean("com.datastax.driver.POWER_OF_TWO_CHOICES");
+
+    static {
+        if (POWER_OF_TWO_CHOICES) {
+            LOG.info("Activating power of two choices");
+        }
+    }
+
     private final LoadBalancingPolicy childPolicy;
     private final boolean shuffleReplicas;
+    private volatile Cluster cluster;
     private volatile Metadata clusterMetadata;
     private volatile ProtocolVersion protocolVersion;
     private volatile CodecRegistry codecRegistry;
@@ -87,6 +99,7 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
 
     @Override
     public void init(Cluster cluster, Collection<Host> hosts) {
+        this.cluster = cluster;
         clusterMetadata = cluster.getMetadata();
         protocolVersion = cluster.getConfiguration().getProtocolOptions().getProtocolVersion();
         codecRegistry = cluster.getConfiguration().getCodecRegistry();
@@ -130,14 +143,7 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
         if (replicas.isEmpty())
             return childPolicy.newQueryPlan(loggedKeyspace, statement);
 
-        final Iterator<Host> iter;
-        if (shuffleReplicas) {
-            List<Host> l = Lists.newArrayList(replicas);
-            Collections.shuffle(l);
-            iter = l.iterator();
-        } else {
-            iter = replicas.iterator();
-        }
+        final Iterator<Host> iter = shuffle(replicas);
 
         return new AbstractIterator<Host>() {
 
@@ -163,6 +169,25 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
                 return endOfData();
             }
         };
+    }
+
+    private Iterator<Host> shuffle(Set<Host> replicas) {
+        if (shuffleReplicas) {
+            List<Host> l = Lists.newArrayList(replicas);
+            Collections.shuffle(l);
+            if (POWER_OF_TWO_CHOICES && l.size() > 2) {
+                // Order the first two hosts by increasing load
+                Host host0 = l.get(0);
+                Host host1 = l.get(1);
+                if (cluster.inFlight(host0) > cluster.inFlight(host1)) {
+                    l.set(0, host1);
+                    l.set(1, host0);
+                }
+            }
+            return l.iterator();
+        } else {
+            return replicas.iterator();
+        }
     }
 
     @Override
