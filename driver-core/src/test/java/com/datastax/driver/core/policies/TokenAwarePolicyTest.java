@@ -22,7 +22,6 @@ import org.testng.annotations.Test;
 import java.nio.ByteBuffer;
 
 import static com.datastax.driver.core.Assertions.assertThat;
-import static com.datastax.driver.core.CreateCCM.TestMode.PER_METHOD;
 import static com.datastax.driver.core.TestUtils.CREATE_KEYSPACE_SIMPLE_FORMAT;
 import static com.datastax.driver.core.TestUtils.nonQuietClusterCloseOptions;
 
@@ -252,6 +251,8 @@ public class TokenAwarePolicyTest {
             // '4891967783720036163'
             ByteBuffer routingKey = TypeCodec.bigint().serialize(33L, ProtocolVersion.NEWEST_SUPPORTED);
             bs.setRoutingKey(routingKey);
+
+            QueryTracker queryTracker = new QueryTracker();
 
             queryTracker.query(session, 10, bs);
 
