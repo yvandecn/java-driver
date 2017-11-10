@@ -241,6 +241,17 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
                     // If we haven't had enough data point yet to have a score, or the last update of the score
                     // is just too old, include the host.
                     if (min < 0 || latency == null || latency.nbMeasure < minMeasure || (now - latency.timestamp) > retryPeriod) {
+
+                        if (min < 0) {
+                            logger.debug("Including {} because min ({}) < 0", host, min);
+                        } else if (latency == null) {
+                            logger.debug("Including {} because latency == null", host);
+                        } else if (latency.nbMeasure < minMeasure) {
+                            logger.debug("Including {} because latency.nbMeasure ({}) < minMeasure ({})", host, latency.nbMeasure, minMeasure);
+                        } else if (now - latency.timestamp > retryPeriod) {
+                            logger.debug("Including {} because now ({}) - latency.timestamp ({}) > retryPeriod ({})", host, now, latency.timestamp, retryPeriod);
+                        }
+
                         if (metrics != null) {
                             metrics.getRegistry()
                                     .counter(MetricsUtil.hostMetricName("LatencyAwarePolicy.inclusions-nodata.", host))
@@ -447,36 +458,44 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
 
         @Override
         public void update(final Host host, Statement statement, Exception exception, long newLatencyNanos) {
-            if (shouldConsiderNewLatency(statement, exception)) {
-                HostLatencyTracker hostTracker = latencies.get(host);
-                if (hostTracker == null) {
-                    hostTracker = new HostLatencyTracker(scale, (30L * minMeasure) / 100L);
-                    HostLatencyTracker old = latencies.putIfAbsent(host, hostTracker);
-                    if (old != null) {
-                        hostTracker = old;
-                    } else if (metrics != null) {
-                        String metricName = MetricsUtil.hostMetricName("LatencyAwarePolicy.latencies.", host);
-                        if (!metrics.getRegistry().getNames().contains(metricName)) {
-                            logger.info("Adding gauge " + metricName);
-                            metrics.getRegistry().register(
-                                    metricName,
-                                    new Gauge<Long>() {
-                                        @Override
-                                        public Long getValue() {
-                                            TimestampedAverage latency = latencyTracker.latencyOf(host);
-                                            return (latency == null) ? -1 : latency.average;
-                                        }
-                                    });
+            try {
+                if (shouldConsiderNewLatency(statement, exception)) {
+                    HostLatencyTracker hostTracker = latencies.get(host);
+                    if (hostTracker == null) {
+                        logger.debug("No tracker for {}, adding", host);
+                        hostTracker = new HostLatencyTracker(scale, (30L * minMeasure) / 100L);
+                        HostLatencyTracker old = latencies.putIfAbsent(host, hostTracker);
+                        if (old != null) {
+                            logger.debug("Got beaten at adding tracker for {}, using existing one", host);
+                            hostTracker = old;
+                        } else if (metrics != null) {
+                            String metricName = MetricsUtil.hostMetricName("LatencyAwarePolicy.latencies.", host);
+                            if (!metrics.getRegistry().getNames().contains(metricName)) {
+                                logger.info("Adding gauge " + metricName);
+                                metrics.getRegistry().register(
+                                        metricName,
+                                        new Gauge<Long>() {
+                                            @Override
+                                            public Long getValue() {
+                                                TimestampedAverage latency = latencyTracker.latencyOf(host);
+                                                return (latency == null) ? -1 : latency.average;
+                                            }
+                                        });
+                            }
                         }
                     }
+                    hostTracker.add(newLatencyNanos);
+                    logger.trace("Updated tracker for {}", host);
+                } else {
+                    if (metrics != null) {
+                        metrics.getRegistry()
+                                .counter(MetricsUtil.hostMetricName("LatencyAwarePolicy.ignored-latencies.", host))
+                                .inc();
+                    }
                 }
-                hostTracker.add(newLatencyNanos);
-            } else {
-                if (metrics != null) {
-                    metrics.getRegistry()
-                            .counter(MetricsUtil.hostMetricName("LatencyAwarePolicy.ignored-latencies.", host))
-                            .inc();
-                }
+            } catch (RuntimeException e) {
+                logger.error("Error updating tracker", e);
+                throw e;
             }
         }
 
@@ -517,6 +536,7 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
         }
 
         public void resetHost(Host host) {
+            logger.trace("Removing tracker for {}", host);
             latencies.remove(host);
         }
 
@@ -546,6 +566,8 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
 
     private static class HostLatencyTracker {
 
+        private static final Logger logger = LoggerFactory.getLogger(HostLatencyTracker.class);
+
         private final long thresholdToAccount;
         private final double scale;
         private final AtomicReference<TimestampedAverage> current = new AtomicReference<TimestampedAverage>();
@@ -568,11 +590,15 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
             long currentTimestamp = System.nanoTime();
 
             long nbMeasure = previous == null ? 1 : previous.nbMeasure + 1;
-            if (nbMeasure < thresholdToAccount)
+            if (nbMeasure < thresholdToAccount) {
+                logger.debug("Cancelling latency update because nbMeasure ({}) < thresholdToAccount ({})", nbMeasure, thresholdToAccount);
                 return new TimestampedAverage(currentTimestamp, -1L, nbMeasure);
+            }
 
-            if (previous == null || previous.average < 0)
+            if (previous == null || previous.average < 0) {
+                logger.debug("Using first non-ignored latency {}", newLatencyNanos);
                 return new TimestampedAverage(currentTimestamp, newLatencyNanos, nbMeasure);
+            }
 
             // Note: it's possible for the delay to be 0, in which case newLatencyNanos will basically be
             // discarded. It's fine: nanoTime is precise enough in practice that even if it happens, it
@@ -582,8 +608,10 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
             // so while this is almost surely not a problem anymore, there's no reason to break the computation
             // if this even happen.
             long delay = currentTimestamp - previous.timestamp;
-            if (delay <= 0)
+            if (delay <= 0) {
+                logger.debug("Cancelling latency update because delay ({}) <= 0", delay);
                 return null;
+            }
 
             double scaledDelay = ((double) delay) / scale;
             // Note: We don't use log1p because we it's quite a bit slower and we don't care about the precision (and since we
@@ -591,6 +619,7 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
             double prevWeight = Math.log(scaledDelay + 1) / scaledDelay;
             long newAverage = (long) ((1.0 - prevWeight) * newLatencyNanos + prevWeight * previous.average);
 
+            logger.trace("Using updated latency {}", newAverage);
             return new TimestampedAverage(currentTimestamp, newAverage, nbMeasure);
         }
 
