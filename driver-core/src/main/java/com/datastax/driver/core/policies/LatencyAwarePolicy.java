@@ -485,7 +485,7 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
                         }
                     }
                     hostTracker.add(newLatencyNanos);
-                    logger.trace("Updated tracker for {}", host);
+                    logger.trace("Updated tracker for {} with {}", host, newLatencyNanos);
                 } else {
                     if (metrics != null) {
                         metrics.getRegistry()
