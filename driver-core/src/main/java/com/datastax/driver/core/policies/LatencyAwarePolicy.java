@@ -452,20 +452,22 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
                 if (hostTracker == null) {
                     hostTracker = new HostLatencyTracker(scale, (30L * minMeasure) / 100L);
                     HostLatencyTracker old = latencies.putIfAbsent(host, hostTracker);
-                    if (old != null)
+                    if (old != null) {
                         hostTracker = old;
-                    if (metrics != null) {
+                    } else if (metrics != null) {
                         String metricName = MetricsUtil.hostMetricName("LatencyAwarePolicy.latencies.", host);
-                        logger.info("Adding gauge " + metricName);
-                        metrics.getRegistry().register(
-                                metricName,
-                                new Gauge<Long>() {
-                                    @Override
-                                    public Long getValue() {
-                                        TimestampedAverage latency = latencyTracker.latencyOf(host);
-                                        return (latency == null) ? -1 : latency.average;
-                                    }
-                                });
+                        if (!metrics.getRegistry().getNames().contains(metricName)) {
+                            logger.info("Adding gauge " + metricName);
+                            metrics.getRegistry().register(
+                                    metricName,
+                                    new Gauge<Long>() {
+                                        @Override
+                                        public Long getValue() {
+                                            TimestampedAverage latency = latencyTracker.latencyOf(host);
+                                            return (latency == null) ? -1 : latency.average;
+                                        }
+                                    });
+                        }
                     }
                 }
                 hostTracker.add(newLatencyNanos);
