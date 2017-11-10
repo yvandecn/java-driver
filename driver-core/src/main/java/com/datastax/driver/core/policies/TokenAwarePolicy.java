@@ -16,6 +16,8 @@
 package com.datastax.driver.core.policies;
 
 import com.datastax.driver.core.*;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Lists;
 import org.slf4j.Logger;
@@ -23,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 /**
  * A wrapper load balancing policy that add token awareness to a child policy.
@@ -50,10 +53,20 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
 
     private static final Logger LOG = LoggerFactory.getLogger(TokenAwarePolicy.class);
     private static final boolean POWER_OF_TWO_CHOICES = Boolean.getBoolean("com.datastax.driver.POWER_OF_TWO_CHOICES");
+    private static final int IGNORE_NEW_HOST_PERIOD_MILLIS = Integer.valueOf(System.getProperty("com.datastax.driver.IGNORE_NEW_HOST_PERIOD_MILLIS", "5000"));
+
+    private final Random ignoreHostRandom = new Random();
 
     static {
         if (POWER_OF_TWO_CHOICES) {
             LOG.info("Activating power of two choices");
+        }
+        if (IGNORE_NEW_HOST_PERIOD_MILLIS != 0) {
+            LOG.info(String.format("Token-aware policy will lower load to hosts recently " +
+                    "UP or ADDED for %d ms after they are detected UP or ADDED. " +
+                    "To disable this start JVM with 'com.datastax.driver.IGNORE_NEW_HOST_PERIOD_MILLIS' set to 0.",
+                    IGNORE_NEW_HOST_PERIOD_MILLIS)
+            );
         }
     }
 
@@ -63,6 +76,11 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
     private volatile Metadata clusterMetadata;
     private volatile ProtocolVersion protocolVersion;
     private volatile CodecRegistry codecRegistry;
+
+    private final Cache<Host, Long> newHostsEvents = CacheBuilder
+            .newBuilder()
+            .expireAfterWrite(IGNORE_NEW_HOST_PERIOD_MILLIS, TimeUnit.MILLISECONDS)
+            .build();
 
     /**
      * Creates a new {@code TokenAware} policy.
@@ -148,11 +166,35 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
         return new AbstractIterator<Host>() {
 
             private Iterator<Host> childIterator;
+            private List<Host> ignoredReplicas = Lists.newArrayList();
 
             @Override
             protected Host computeNext() {
                 while (iter.hasNext()) {
                     Host host = iter.next();
+
+                    if (IGNORE_NEW_HOST_PERIOD_MILLIS != 0) {
+                        Long hostTimestamp = newHostsEvents.getIfPresent(host);
+                        // should be evicted from the cache if present for more than the desired time
+                        if (hostTimestamp != null) {
+                            // if host is supposed to be ignored, 50% chance to add it at the end of the plan
+                            if (ignoreHostRandom.nextBoolean()) {
+                                LOG.trace(String.format("Host [%s] was chosen for query " +
+                                        "but will be put at the end of the query plan as it is still in a warm-up phase", host));
+                                ignoredReplicas.add(host);
+                                continue;
+                            }
+                        }
+                    }
+
+                    if (host.isUp() && childPolicy.distance(host) == HostDistance.LOCAL)
+                        return host;
+                }
+
+                Iterator<Host> ignoredReplicasIterator = ignoredReplicas.iterator();
+                while (ignoredReplicasIterator.hasNext()) {
+                    Host host = ignoredReplicasIterator.next();
+
                     if (host.isUp() && childPolicy.distance(host) == HostDistance.LOCAL)
                         return host;
                 }
@@ -192,21 +234,43 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
 
     @Override
     public void onUp(Host host) {
+        if (IGNORE_NEW_HOST_PERIOD_MILLIS != 0) {
+            LOG.trace(String.format("Host [%s] has just been detected up, will be " +
+                            "considered 'warming-up' for %d ms.",
+                    host,
+                    IGNORE_NEW_HOST_PERIOD_MILLIS)
+            );
+            newHostsEvents.put(host, System.currentTimeMillis());
+        }
         childPolicy.onUp(host);
     }
 
     @Override
     public void onDown(Host host) {
+        if (IGNORE_NEW_HOST_PERIOD_MILLIS != 0) {
+            newHostsEvents.invalidate(host);
+        }
         childPolicy.onDown(host);
     }
 
     @Override
     public void onAdd(Host host) {
+        if (IGNORE_NEW_HOST_PERIOD_MILLIS != 0) {
+            LOG.trace(String.format("Host [%s] has just been detected up, will be " +
+                    "considered 'warming-up' for %d ms.",
+                    host,
+                    IGNORE_NEW_HOST_PERIOD_MILLIS)
+            );
+            newHostsEvents.put(host, System.currentTimeMillis());
+        }
         childPolicy.onAdd(host);
     }
 
     @Override
     public void onRemove(Host host) {
+        if (IGNORE_NEW_HOST_PERIOD_MILLIS != 0) {
+            newHostsEvents.invalidate(host);
+        }
         childPolicy.onRemove(host);
     }
 
