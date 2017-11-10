@@ -463,7 +463,7 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
                     HostLatencyTracker hostTracker = latencies.get(host);
                     if (hostTracker == null) {
                         logger.debug("No tracker for {}, adding", host);
-                        hostTracker = new HostLatencyTracker(scale, (30L * minMeasure) / 100L);
+                        hostTracker = new HostLatencyTracker(host, scale, (30L * minMeasure) / 100L);
                         HostLatencyTracker old = latencies.putIfAbsent(host, hostTracker);
                         if (old != null) {
                             logger.debug("Got beaten at adding tracker for {}, using existing one", host);
@@ -568,11 +568,13 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
 
         private static final Logger logger = LoggerFactory.getLogger(HostLatencyTracker.class);
 
+        private final Host host;
         private final long thresholdToAccount;
         private final double scale;
         private final AtomicReference<TimestampedAverage> current = new AtomicReference<TimestampedAverage>();
 
-        HostLatencyTracker(long scale, long thresholdToAccount) {
+        HostLatencyTracker(Host host, long scale, long thresholdToAccount) {
+            this.host = host;
             this.scale = (double) scale; // We keep in double since that's how we'll use it.
             this.thresholdToAccount = thresholdToAccount;
         }
@@ -591,12 +593,12 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
 
             long nbMeasure = previous == null ? 1 : previous.nbMeasure + 1;
             if (nbMeasure < thresholdToAccount) {
-                logger.debug("Cancelling latency update because nbMeasure ({}) < thresholdToAccount ({})", nbMeasure, thresholdToAccount);
+                logger.debug("Cancelling latency update for {} because nbMeasure ({}) < thresholdToAccount ({})", host, nbMeasure, thresholdToAccount);
                 return new TimestampedAverage(currentTimestamp, -1L, nbMeasure);
             }
 
             if (previous == null || previous.average < 0) {
-                logger.debug("Using first non-ignored latency {}", newLatencyNanos);
+                logger.debug("Using first non-ignored latency {} for {}", newLatencyNanos, host);
                 return new TimestampedAverage(currentTimestamp, newLatencyNanos, nbMeasure);
             }
 
@@ -609,7 +611,7 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
             // if this even happen.
             long delay = currentTimestamp - previous.timestamp;
             if (delay <= 0) {
-                logger.debug("Cancelling latency update because delay ({}) <= 0", delay);
+                logger.debug("Cancelling latency update for {} because delay ({}) <= 0", host, delay);
                 return null;
             }
 
@@ -619,7 +621,7 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
             double prevWeight = Math.log(scaledDelay + 1) / scaledDelay;
             long newAverage = (long) ((1.0 - prevWeight) * newLatencyNanos + prevWeight * previous.average);
 
-            logger.trace("Using updated latency {}", newAverage);
+            logger.trace("Using updated latency {} for {}", newAverage, host);
             return new TimestampedAverage(currentTimestamp, newAverage, nbMeasure);
         }
 
