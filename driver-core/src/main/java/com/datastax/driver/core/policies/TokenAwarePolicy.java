@@ -237,7 +237,7 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
     @Override
     public void onUp(Host host) {
         if (IGNORE_NEW_HOST_PERIOD_MILLIS != 0) {
-            LOG.trace(String.format("Host [%s] has just been detected up, will be " +
+            LOG.debug(String.format("Host [%s] has just been detected up, will be " +
                             "considered 'warming-up' for %d ms.",
                     host,
                     IGNORE_NEW_HOST_PERIOD_MILLIS)
@@ -258,7 +258,7 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
     @Override
     public void onAdd(Host host) {
         if (IGNORE_NEW_HOST_PERIOD_MILLIS != 0) {
-            LOG.trace(String.format("Host [%s] has just been detected up, will be " +
+            LOG.debug(String.format("Host [%s] has just been detected up, will be " +
                     "considered 'warming-up' for %d ms.",
                     host,
                     IGNORE_NEW_HOST_PERIOD_MILLIS)
