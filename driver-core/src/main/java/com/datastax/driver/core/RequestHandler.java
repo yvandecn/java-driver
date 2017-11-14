@@ -489,17 +489,18 @@ class RequestHandler {
 
         @Override
         public void onSet(Connection connection, Message.Response response, long latency, int retryCount) {
-            QueryState queryState = queryStateRef.get();
-            if (!queryState.isInProgressAt(retryCount) ||
-                    !queryStateRef.compareAndSet(queryState, queryState.complete())) {
-                logger.debug("onSet triggered but the response was completed by another thread, cancelling (retryCount = {}, queryState = {}, queryStateRef = {})",
-                        retryCount, queryState, queryStateRef.get());
-                return;
-            }
-
             Host queriedHost = current;
             Exception exceptionToReport = null;
             try {
+
+                QueryState queryState = queryStateRef.get();
+                if (!queryState.isInProgressAt(retryCount) ||
+                        !queryStateRef.compareAndSet(queryState, queryState.complete())) {
+                    logger.debug("onSet triggered but the response was completed by another thread, cancelling (retryCount = {}, queryState = {}, queryStateRef = {})",
+                            retryCount, queryState, queryStateRef.get());
+                    return;
+                }
+
                 switch (response.type) {
                     case RESULT:
                         connection.release();
@@ -734,16 +735,16 @@ class RequestHandler {
 
         @Override
         public void onException(Connection connection, Exception exception, long latency, int retryCount) {
-            QueryState queryState = queryStateRef.get();
-            if (!queryState.isInProgressAt(retryCount) ||
-                    !queryStateRef.compareAndSet(queryState, queryState.complete())) {
-                logger.debug("onException triggered but the response was completed by another thread, cancelling (retryCount = {}, queryState = {}, queryStateRef = {})",
-                        retryCount, queryState, queryStateRef.get());
-                return;
-            }
-
             Host queriedHost = current;
             try {
+                QueryState queryState = queryStateRef.get();
+                if (!queryState.isInProgressAt(retryCount) ||
+                        !queryStateRef.compareAndSet(queryState, queryState.complete())) {
+                    logger.debug("onException triggered but the response was completed by another thread, cancelling (retryCount = {}, queryState = {}, queryStateRef = {})",
+                            retryCount, queryState, queryStateRef.get());
+                    return;
+                }
+
                 connection.release();
 
                 if (exception instanceof ConnectionException) {
@@ -763,23 +764,23 @@ class RequestHandler {
 
         @Override
         public boolean onTimeout(Connection connection, long latency, int retryCount) {
-            QueryState queryState = queryStateRef.get();
-            if (!queryState.isInProgressAt(retryCount) ||
-                    !queryStateRef.compareAndSet(queryState, queryState.complete())) {
-                logger.debug("onTimeout triggered but the response was completed by another thread, cancelling (retryCount = {}, queryState = {}, queryStateRef = {})",
-                        retryCount, queryState, queryStateRef.get());
-                return false;
-            }
-
             Host queriedHost = current;
-
             OperationTimedOutException timeoutException = new OperationTimedOutException(connection.address, "Timed out waiting for server response");
 
+            boolean result = true;
             try {
-                connection.release();
+                QueryState queryState = queryStateRef.get();
+                if (!queryState.isInProgressAt(retryCount) ||
+                        !queryStateRef.compareAndSet(queryState, queryState.complete())) {
+                    logger.debug("onTimeout triggered but the response was completed by another thread, cancelling (retryCount = {}, queryState = {}, queryStateRef = {})",
+                            retryCount, queryState, queryStateRef.get());
+                    result = false;
+                } else {
+                    connection.release();
 
-                RetryPolicy.RetryDecision decision = computeRetryDecisionOnRequestError(timeoutException);
-                processRetryDecision(decision, connection, timeoutException);
+                    RetryPolicy.RetryDecision decision = computeRetryDecisionOnRequestError(timeoutException);
+                    processRetryDecision(decision, connection, timeoutException);
+                }
             } catch (Exception e) {
                 // This shouldn't happen, but if it does, we want to signal the callback, not let it hang indefinitely
                 setFinalException(null, new DriverInternalError("An unexpected error happened while handling timeout", e));
@@ -787,7 +788,7 @@ class RequestHandler {
                 if (queriedHost != null && statement != Statement.DEFAULT)
                     manager.cluster.manager.reportQuery(queriedHost, statement, timeoutException, latency);
             }
-            return true;
+            return result;
         }
 
         @Override
