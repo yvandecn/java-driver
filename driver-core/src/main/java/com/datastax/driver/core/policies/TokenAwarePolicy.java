@@ -179,8 +179,10 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
                         if (hostTimestamp != null) {
                             // if host is supposed to be ignored, 50% chance to add it at the end of the plan
                             if (ignoreHostRandom.nextBoolean()) {
-                                LOG.trace(String.format("Host [%s] was chosen for query " +
-                                        "but will be put at the end of the query plan as it is still in a warm-up phase", host));
+                                if (LOG.isTraceEnabled()) {
+                                    LOG.trace(String.format("Host [%s] was chosen for query " +
+                                            "but will be put at the end of the query plan as it is still in a warm-up phase", host));
+                                }
                                 ignoredReplicas.add(host);
                                 continue;
                             }
