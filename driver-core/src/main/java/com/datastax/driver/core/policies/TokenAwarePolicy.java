@@ -178,7 +178,7 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
                         Long hostTimestamp = newHostsEvents.getIfPresent(host);
                         // should be evicted from the cache if present for more than the desired time
                         if (hostTimestamp != null) {
-                            if (ignoreHostRandom.nextDouble() < (IGNORE_NEW_HOST_PROBA / 100)) {
+                            if (ignoreHostRandom.nextDouble() < (IGNORE_NEW_HOST_PROBA / 100.0)) {
                                 if (LOG.isTraceEnabled()) {
                                     LOG.trace(String.format("Host [%s] was chosen for query " +
                                             "but will be put at the end of the query plan as it is still in a warm-up phase", host));
