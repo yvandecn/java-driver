@@ -54,6 +54,7 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
     private static final Logger LOG = LoggerFactory.getLogger(TokenAwarePolicy.class);
     private static final boolean POWER_OF_TWO_CHOICES = Boolean.getBoolean("com.datastax.driver.POWER_OF_TWO_CHOICES");
     private static final int IGNORE_NEW_HOST_PERIOD_MILLIS = Integer.valueOf(System.getProperty("com.datastax.driver.IGNORE_NEW_HOST_PERIOD_MILLIS", "5000"));
+    private static final int IGNORE_NEW_HOST_PROBA = Integer.valueOf(System.getProperty("com.datastax.driver.IGNORE_NEW_HOST_PROBA", "50"));
 
     private final Random ignoreHostRandom = new Random();
 
@@ -177,8 +178,7 @@ public class TokenAwarePolicy implements ChainableLoadBalancingPolicy {
                         Long hostTimestamp = newHostsEvents.getIfPresent(host);
                         // should be evicted from the cache if present for more than the desired time
                         if (hostTimestamp != null) {
-                            // if host is supposed to be ignored, 50% chance to add it at the end of the plan
-                            if (ignoreHostRandom.nextBoolean()) {
+                            if (ignoreHostRandom.nextDouble() < (IGNORE_NEW_HOST_PROBA / 100)) {
                                 if (LOG.isTraceEnabled()) {
                                     LOG.trace(String.format("Host [%s] was chosen for query " +
                                             "but will be put at the end of the query plan as it is still in a warm-up phase", host));
