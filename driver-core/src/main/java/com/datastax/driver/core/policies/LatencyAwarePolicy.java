@@ -180,6 +180,9 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
     @Override
     public void init(Cluster cluster, Collection<Host> hosts) {
         childPolicy.init(cluster, hosts);
+        for (Host host : hosts) {
+            latencyTracker.addHost(host);
+        }
         cluster.register(latencyTracker);
 
         metrics = cluster.getMetrics();
@@ -338,17 +341,19 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
     @Override
     public void onUp(Host host) {
         childPolicy.onUp(host);
+        latencyTracker.addHost(host);
+    }
+
+    @Override
+    public void onAdd(Host host) {
+        childPolicy.onAdd(host);
+        latencyTracker.addHost(host);
     }
 
     @Override
     public void onDown(Host host) {
         childPolicy.onDown(host);
         latencyTracker.resetHost(host);
-    }
-
-    @Override
-    public void onAdd(Host host) {
-        childPolicy.onAdd(host);
     }
 
     @Override
@@ -459,35 +464,12 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
         @Override
         public void update(final Host host, Statement statement, Exception exception, long newLatencyNanos) {
             try {
-                if (shouldConsiderNewLatency(statement, exception)) {
-                    HostLatencyTracker hostTracker = latencies.get(host);
-                    if (hostTracker == null) {
-                        logger.debug("No tracker for {}, adding", host);
-                        hostTracker = new HostLatencyTracker(host, scale, (30L * minMeasure) / 100L);
-                        HostLatencyTracker old = latencies.putIfAbsent(host, hostTracker);
-                        if (old != null) {
-                            logger.debug("Got beaten at adding tracker for {}, using existing one", host);
-                            hostTracker = old;
-                        } else if (metrics != null) {
-                            String metricName = MetricsUtil.hostMetricName("LatencyAwarePolicy.latencies.", host);
-                            if (!metrics.getRegistry().getNames().contains(metricName)) {
-                                logger.info("Adding gauge " + metricName);
-                                metrics.getRegistry().register(
-                                        metricName,
-                                        new Gauge<Long>() {
-                                            @Override
-                                            public Long getValue() {
-                                                TimestampedAverage latency = latencyTracker.latencyOf(host);
-                                                return (latency == null) ? -1 : latency.average;
-                                            }
-                                        });
-                            }
-                        }
-                    }
-                    hostTracker.add(newLatencyNanos);
-                    logger.trace("Updated tracker for {} with {}", host, newLatencyNanos);
-                } else {
-                    if (metrics != null) {
+                HostLatencyTracker hostTracker = latencies.get(host);
+                if (hostTracker != null) {
+                    if (shouldConsiderNewLatency(statement, exception)) {
+                        hostTracker.add(newLatencyNanos);
+                        logger.trace("Updated tracker for {} with {}", host, newLatencyNanos);
+                    } else if (metrics != null) {
                         metrics.getRegistry()
                                 .counter(MetricsUtil.hostMetricName("LatencyAwarePolicy.ignored-latencies.", host))
                                 .inc();
@@ -535,8 +517,29 @@ public class LatencyAwarePolicy implements ChainableLoadBalancingPolicy {
             return map;
         }
 
+        public void addHost(final Host host) {
+            logger.debug("Adding tracker for {}", host);
+            HostLatencyTracker old = latencies.putIfAbsent(host,
+                    new HostLatencyTracker(host, scale, (30L * minMeasure) / 100L));
+            if (old == null && metrics != null) {
+                String metricName = MetricsUtil.hostMetricName("LatencyAwarePolicy.latencies.", host);
+                if (!metrics.getRegistry().getNames().contains(metricName)) {
+                    logger.info("Adding gauge " + metricName);
+                    metrics.getRegistry().register(
+                            metricName,
+                            new Gauge<Long>() {
+                                @Override
+                                public Long getValue() {
+                                    TimestampedAverage latency = latencyTracker.latencyOf(host);
+                                    return (latency == null) ? -1 : latency.average;
+                                }
+                            });
+                }
+            }
+        }
+
         public void resetHost(Host host) {
-            logger.trace("Removing tracker for {}", host);
+            logger.debug("Removing tracker for {}", host);
             latencies.remove(host);
         }
 
