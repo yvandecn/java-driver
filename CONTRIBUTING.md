@@ -210,7 +210,7 @@ the types from `edu.umd.cs.findbugs.annotations`, there are homonyms in the clas
 ## Coding style -- test code
 
 Static imports are permitted in a couple of places:
-* AssertJ's `assertThat` / `fail`.
+* AssertJ methods whose names start with `assertThat` or `fail`.
 * Mockito methods, e.g.:
   ```java
   verify(intCodec).decodePrimitive(any(ByteBuffer.class), eq(ProtocolVersion.DEFAULT));
