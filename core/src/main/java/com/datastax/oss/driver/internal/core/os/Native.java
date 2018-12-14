@@ -72,7 +72,7 @@ public class Native {
           "Native call not available. "
               + "Check isGetProcessIdAvailable() before calling this method.");
     }
-    return PosixLoader.POSIX.getpid();
+    return PosixLoader.POSIX_LIB.getpid();
   }
 
   /**
@@ -126,7 +126,7 @@ public class Native {
 
   /** @see LibCLoader */
   private static class PosixLoader {
-    private static final jnr.posix.POSIX POSIX;
+    private static final jnr.posix.POSIX POSIX_LIB;
     private static final boolean GET_PID_AVAILABLE;
 
     static {
@@ -137,11 +137,11 @@ public class Native {
         posix = null;
         LOG.debug("Error loading POSIX", t);
       }
-      POSIX = posix;
+      POSIX_LIB = posix;
       boolean getPidAvailable = false;
-      if (POSIX != null) {
+      if (POSIX_LIB != null) {
         try {
-          POSIX.getpid();
+          POSIX_LIB.getpid();
           getPidAvailable = true;
         } catch (Throwable t) {
           LOG.debug("Error accessing posix.getpid()", t);

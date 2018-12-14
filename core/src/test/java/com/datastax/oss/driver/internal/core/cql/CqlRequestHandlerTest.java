@@ -159,6 +159,7 @@ public class CqlRequestHandlerTest extends CqlRequestHandlerTestBase {
   }
 
   @Test
+  @SuppressWarnings("ByteBufferBackingArray")
   public void should_reprepare_on_the_fly_if_not_prepared() throws InterruptedException {
     ByteBuffer mockId = Bytes.fromHexString("0xffff");
 

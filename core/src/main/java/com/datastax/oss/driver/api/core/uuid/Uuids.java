@@ -19,6 +19,8 @@ import com.datastax.oss.driver.internal.core.os.Native;
 import com.datastax.oss.driver.internal.core.util.Loggers;
 import com.datastax.oss.driver.shaded.guava.common.annotations.VisibleForTesting;
 import com.datastax.oss.driver.shaded.guava.common.base.Charsets;
+import com.datastax.oss.driver.shaded.guava.common.base.Splitter;
+import com.datastax.oss.driver.shaded.guava.common.collect.Iterables;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
@@ -165,7 +167,9 @@ public final class Uuids {
     }
     if (pid == null) {
       try {
-        String pidJmx = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
+        String pidJmx =
+            Iterables.get(
+                Splitter.on('@').split(ManagementFactory.getRuntimeMXBean().getName()), 0);
         pid = Integer.parseInt(pidJmx);
         LOG.info("PID obtained through JMX: {}", pid);
       } catch (Exception e) {
