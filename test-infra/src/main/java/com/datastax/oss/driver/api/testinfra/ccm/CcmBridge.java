@@ -19,6 +19,7 @@ import static io.netty.util.internal.PlatformDependent.isWindows;
 
 import com.datastax.oss.driver.api.core.Version;
 import com.datastax.oss.driver.shaded.guava.common.base.Joiner;
+import com.datastax.oss.driver.shaded.guava.common.collect.Maps;
 import com.datastax.oss.driver.shaded.guava.common.io.Resources;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -76,6 +77,30 @@ public class CcmBridge implements AutoCloseable {
   public static final String BRANCH = System.getProperty("ccm.branch");
 
   public static final Boolean DSE_ENABLEMENT = Boolean.getBoolean("ccm.dse");
+
+  // If set, override the JAVA_HOME environment variable used by C*.  This enables running C*
+  // with a different JDK than what is used for running tests.
+  public static final String JAVA_HOME = System.getProperty("ccm.java.home");
+
+  // If set, prepend to the PATH environment variable used by C*
+  public static final String PATH = System.getProperty("ccm.path");
+
+  public static final Map<String, String> ENVIRONMENT_MAP =
+      Maps.newHashMap(new ProcessBuilder().environment());
+
+  static {
+    if (JAVA_HOME != null) {
+      ENVIRONMENT_MAP.put("JAVA_HOME", JAVA_HOME);
+    }
+
+    if (PATH != null) {
+      String existingPath = ENVIRONMENT_MAP.get("PATH");
+      if (existingPath == null) {
+        existingPath = "";
+      }
+      ENVIRONMENT_MAP.put("PATH", PATH + File.pathSeparator + existingPath);
+    }
+  }
 
   public static final String DEFAULT_CLIENT_TRUSTSTORE_PASSWORD = "cassandra1sfun";
   public static final String DEFAULT_CLIENT_TRUSTSTORE_PATH = "/client.truststore";
@@ -312,7 +337,7 @@ public class CcmBridge implements AutoCloseable {
       executor.setStreamHandler(streamHandler);
       executor.setWatchdog(watchDog);
 
-      int retValue = executor.execute(cli);
+      int retValue = executor.execute(cli, ENVIRONMENT_MAP);
       if (retValue != 0) {
         logger.error(
             "Non-zero exit code ({}) returned from executing ccm command: {}", retValue, cli);

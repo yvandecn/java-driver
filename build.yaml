@@ -1,5 +1,6 @@
 java:
   - openjdk8
+  - openjdk11
 os:
   - ubuntu/bionic64/java-driver
 cassandra:
@@ -13,6 +14,8 @@ build:
     goals: verify --batch-mode
     properties: |
       ccm.version=$CCM_CASSANDRA_VERSION
+      ccm.java.home=$CCM_JAVA_HOME
+      ccm.path=$CCM_JAVA_HOME/bin
   - xunit:
     - "**/target/surefire-reports/TEST-*.xml"
     - "**/target/failsafe-reports/TEST-*.xml"
