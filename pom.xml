@@ -200,7 +200,7 @@
       <plugins>
         <plugin>
           <artifactId>maven-compiler-plugin</artifactId>
-          <version>3.6.1</version>
+          <version>3.8.0</version>
         </plugin>
         <plugin>
           <groupId>com.coveo</groupId>
@@ -277,7 +277,7 @@
         <plugin>
           <groupId>org.jacoco</groupId>
           <artifactId>jacoco-maven-plugin</artifactId>
-          <version>0.7.9</version>
+          <version>0.8.2</version>
         </plugin>
         <plugin>
           <groupId>org.apache.felix</groupId>
@@ -302,29 +302,25 @@
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
-          <compilerId>javac-with-errorprone</compilerId>
-          <forceJavacCompilerUse>true</forceJavacCompilerUse>
-          <source>1.8</source>
-          <target>1.8</target>
+          <source>8</source>
+          <target>8</target>
           <compilerArgs combine.children="override">
-            <compilerArg>-Xep:FutureReturnValueIgnored:OFF</compilerArg>
-            <compilerArg>-Xep:UnnecessaryParentheses:OFF</compilerArg>
+            <arg>-XDcompilePolicy=simple</arg>
+            <arg>-Xplugin:ErrorProne -Xep:FutureReturnValueIgnored:OFF
+              -Xep:UnnecessaryParentheses:OFF
+            </arg>
           </compilerArgs>
           <showWarnings>true</showWarnings>
-          <failOnWarning>true</failOnWarning>
+          <!-- TEMPORARILY DISABLE until have solution for
+          bootclasspath issue <failOnWarning>true</failOnWarning> -->
+          <annotationProcessorPaths>
+            <path>
+              <groupId>com.google.errorprone</groupId>
+              <artifactId>error_prone_core</artifactId>
+              <version>2.3.2</version>
+            </path>
+          </annotationProcessorPaths>
         </configuration>
-        <dependencies>
-          <dependency>
-            <groupId>org.codehaus.plexus</groupId>
-            <artifactId>plexus-compiler-javac-errorprone</artifactId>
-            <version>2.8.5</version>
-          </dependency>
-          <dependency>
-            <groupId>com.google.errorprone</groupId>
-            <artifactId>error_prone_core</artifactId>
-            <version>2.3.2</version>
-          </dependency>
-        </dependencies>
       </plugin>
       <plugin>
         <groupId>com.coveo</groupId>
@@ -583,6 +579,40 @@ limitations under the License.]]>
                 </goals>
               </execution>
             </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <!-- using github.com/google/error-prone-javac is required when running on JDK 8 -->
+    <profile>
+      <id>jdk8</id>
+      <activation>
+        <jdk>1.8</jdk>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <configuration>
+              <forceJavacCompilerUse>true</forceJavacCompilerUse>
+              <compilerId>javac-with-errorprone</compilerId>
+              <compilerArgs combine.children="override">
+                <compilerArg>-Xep:FutureReturnValueIgnored:OFF</compilerArg>
+                <compilerArg>-Xep:UnnecessaryParentheses:OFF</compilerArg>
+              </compilerArgs>
+            </configuration>
+            <dependencies>
+              <dependency>
+                <groupId>org.codehaus.plexus</groupId>
+                <artifactId>plexus-compiler-javac-errorprone</artifactId>
+                <version>2.8.5</version>
+              </dependency>
+              <dependency>
+                <groupId>com.google.errorprone</groupId>
+                <artifactId>error_prone_core</artifactId>
+                <version>2.3.2</version>
+              </dependency>
+            </dependencies>
           </plugin>
         </plugins>
       </build>
