@@ -4,7 +4,7 @@
 
 ### 4.0.0-rc1 (in progress)
 
-
+- [improvement] JAVA-2067: Publish javadocs JAR for the shaded module
 
 ### 4.0.0-beta3
 
