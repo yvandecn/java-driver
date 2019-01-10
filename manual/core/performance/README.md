@@ -94,7 +94,7 @@ less contention, writing your own implementation or letting the server assign ti
 [Tracing](../tracing/) should be used for only a small percentage of your queries. It consumes
 additional resources on the server, and fetching each trace requires background requests.
 
-Do not enable tracing for every requests; it's a sure way to bring your performance down.
+Do not enable tracing for every request; it's a sure way to bring your performance down.
 
 #### Request trackers
 
@@ -106,7 +106,8 @@ They should avoid blocking calls, as well as any CPU-intensive computations.
 
 #### Metrics
 
-Similarly, some of the driver's [metrics](../metrics/) are updated for every request.
+Similarly, some of the driver's [metrics](../metrics/) are updated for every request (if the metric
+is enabled).
 
 By default, the driver ships with all metrics disabled. Enable them conservatively, and if you're
 investigating a performance issue, try disabling them temporarily to check that they are not the
@@ -298,7 +299,7 @@ You should group your schema changes as much as possible.
 
 Every change made from a client will be pushed to all other clients, causing them to refresh their
 metadata. If you have multiple client instances, it might be a good idea to
-[desactivate the metadata](../metadata/schema/#enabling-disabling) on other clients while you apply
+[deactivate the metadata](../metadata/schema/#enabling-disabling) on other clients while you apply
 the updates, and reactivate it at the end. Reactivating will trigger an immediate refresh, so you
 can even ramp this up to avoid a "thundering herd" effect.
 
