@@ -26,6 +26,16 @@ import net.jcip.annotations.ThreadSafe;
 public class ByteOrderedTokenFactory implements TokenFactory {
 
   public static final ByteOrderedToken MIN_TOKEN = new ByteOrderedToken(ByteBuffer.allocate(0));
+  private final String partitionerName;
+
+  public ByteOrderedTokenFactory(String partitionerName) {
+    this.partitionerName = partitionerName;
+  }
+
+  @Override
+  public String getPartitionerName() {
+    return partitionerName;
+  }
 
   @Override
   public Token hash(ByteBuffer partitionKey) {

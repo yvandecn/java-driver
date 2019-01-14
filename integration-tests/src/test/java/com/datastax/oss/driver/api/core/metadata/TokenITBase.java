@@ -16,6 +16,7 @@
 package com.datastax.oss.driver.api.core.metadata;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 import com.datastax.oss.driver.api.core.CqlIdentifier;
 import com.datastax.oss.driver.api.core.CqlSession;
@@ -36,6 +37,7 @@ import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import org.junit.Test;
@@ -68,11 +70,14 @@ public abstract class TokenITBase {
     }
   }
 
+  private final String expectedPartitionerName;
   private final Class<? extends Token> expectedTokenType;
   private final boolean useVnodes;
   private final int tokensPerNode;
 
-  protected TokenITBase(Class<? extends Token> expectedTokenType, boolean useVnodes) {
+  protected TokenITBase(
+      String expectedPartitionerName, Class<? extends Token> expectedTokenType, boolean useVnodes) {
+    this.expectedPartitionerName = expectedPartitionerName;
     this.expectedTokenType = expectedTokenType;
     this.useVnodes = useVnodes;
     this.tokensPerNode = useVnodes ? 256 : 1;
@@ -91,8 +96,7 @@ public abstract class TokenITBase {
    */
   @Test
   public void should_be_consistent_with_range_queries() {
-    Metadata metadata = session().getMetadata();
-    TokenMap tokenMap = metadata.getTokenMap().get();
+    TokenMap tokenMap = getTokenMap();
 
     // Find the replica for a given partition key of ks1.foo.
     int key = 1;
@@ -299,7 +303,7 @@ public abstract class TokenITBase {
    */
   @Test
   public void should_have_only_one_wrapped_range() {
-    TokenMap tokenMap = session().getMetadata().getTokenMap().get();
+    TokenMap tokenMap = getTokenMap();
     TokenRange wrappedRange = null;
     for (TokenRange range : tokenMap.getTokenRanges()) {
       if (range.isWrappedAround()) {
@@ -317,7 +321,7 @@ public abstract class TokenITBase {
 
   @Test
   public void should_create_tokens_and_ranges() {
-    TokenMap tokenMap = session().getMetadata().getTokenMap().get();
+    TokenMap tokenMap = getTokenMap();
 
     // Pick a random range
     TokenRange range = tokenMap.getTokenRanges().iterator().next();
@@ -330,7 +334,7 @@ public abstract class TokenITBase {
 
   @Test
   public void should_create_token_from_partition_key() {
-    TokenMap tokenMap = session().getMetadata().getTokenMap().get();
+    TokenMap tokenMap = getTokenMap();
 
     Row row = session().execute("SELECT token(i) FROM foo WHERE i = 1").one();
     Token expected = row.getToken(0);
@@ -338,5 +342,17 @@ public abstract class TokenITBase {
     ProtocolVersion protocolVersion = session().getContext().getProtocolVersion();
     assertThat(tokenMap.newToken(TypeCodecs.INT.encodePrimitive(1, protocolVersion)))
         .isEqualTo(expected);
+  }
+
+  private TokenMap getTokenMap() {
+    Optional<? extends TokenMap> maybeTokenMap = session().getMetadata().getTokenMap();
+    if (maybeTokenMap.isPresent()) {
+      TokenMap tokenMap = maybeTokenMap.get();
+      assertThat(tokenMap.getPartitionerName()).isEqualTo(expectedPartitionerName);
+      return tokenMap;
+    } else {
+      fail("Expected token map to be present");
+      return null; // never reached
+    }
   }
 }

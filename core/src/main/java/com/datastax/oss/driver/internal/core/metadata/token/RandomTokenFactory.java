@@ -34,8 +34,10 @@ public class RandomTokenFactory implements TokenFactory {
 
   private final MessageDigest prototype;
   private final boolean supportsClone;
+  private final String partitionerName;
 
-  public RandomTokenFactory() {
+  public RandomTokenFactory(String partitionerName) {
+    this.partitionerName = partitionerName;
     prototype = createMessageDigest();
     boolean supportsClone;
     try {
@@ -45,6 +47,11 @@ public class RandomTokenFactory implements TokenFactory {
       supportsClone = false;
     }
     this.supportsClone = supportsClone;
+  }
+
+  @Override
+  public String getPartitionerName() {
+    return partitionerName;
   }
 
   @Override

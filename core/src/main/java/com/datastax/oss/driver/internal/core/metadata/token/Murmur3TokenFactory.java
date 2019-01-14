@@ -17,6 +17,7 @@ package com.datastax.oss.driver.internal.core.metadata.token;
 
 import com.datastax.oss.driver.api.core.metadata.token.Token;
 import com.datastax.oss.driver.api.core.metadata.token.TokenRange;
+import com.datastax.oss.driver.shaded.guava.common.annotations.VisibleForTesting;
 import com.datastax.oss.driver.shaded.guava.common.base.Preconditions;
 import java.nio.ByteBuffer;
 import net.jcip.annotations.ThreadSafe;
@@ -26,6 +27,22 @@ public class Murmur3TokenFactory implements TokenFactory {
 
   public static final Murmur3Token MIN_TOKEN = new Murmur3Token(Long.MIN_VALUE);
   public static final Murmur3Token MAX_TOKEN = new Murmur3Token(Long.MAX_VALUE);
+  private final String partitionerName;
+
+  public Murmur3TokenFactory(String partitionerName) {
+    this.partitionerName = partitionerName;
+  }
+
+  // Only used from unit tests, where repeating the name everywhere is not really relevant
+  @VisibleForTesting
+  public Murmur3TokenFactory() {
+    this("org.apache.cassandra.dht.Murmur3Partitioner");
+  }
+
+  @Override
+  public String getPartitionerName() {
+    return partitionerName;
+  }
 
   @Override
   public Token hash(ByteBuffer partitionKey) {
