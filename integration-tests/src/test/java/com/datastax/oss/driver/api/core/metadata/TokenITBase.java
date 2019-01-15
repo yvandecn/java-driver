@@ -16,7 +16,6 @@
 package com.datastax.oss.driver.api.core.metadata;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.fail;
 
 import com.datastax.oss.driver.api.core.CqlIdentifier;
 import com.datastax.oss.driver.api.core.CqlSession;
@@ -37,7 +36,6 @@ import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import org.junit.Test;
@@ -345,14 +343,14 @@ public abstract class TokenITBase {
   }
 
   private TokenMap getTokenMap() {
-    Optional<? extends TokenMap> maybeTokenMap = session().getMetadata().getTokenMap();
-    if (maybeTokenMap.isPresent()) {
-      TokenMap tokenMap = maybeTokenMap.get();
-      assertThat(tokenMap.getPartitionerName()).isEqualTo(expectedPartitionerName);
-      return tokenMap;
-    } else {
-      fail("Expected token map to be present");
-      return null; // never reached
-    }
+    return session()
+        .getMetadata()
+        .getTokenMap()
+        .map(
+            tokenMap -> {
+              assertThat(tokenMap.getPartitionerName()).isEqualTo(expectedPartitionerName);
+              return tokenMap;
+            })
+        .orElseThrow(() -> new AssertionError("Expected token map to be present"));
   }
 }
