@@ -33,15 +33,15 @@ public class DefaultTokenFactoryRegistry implements TokenFactoryRegistry {
 
   @Override
   public TokenFactory tokenFactoryFor(String partitioner) {
-    if (partitioner.endsWith("Murmur3Partitioner")) {
+    if (Murmur3TokenFactory.PARTITIONER_NAME.equals(partitioner)) {
       LOG.debug("[{}] Detected Murmur3 partitioner ({})", logPrefix, partitioner);
-      return new Murmur3TokenFactory(partitioner);
-    } else if (partitioner.endsWith("RandomPartitioner")) {
+      return new Murmur3TokenFactory();
+    } else if (RandomTokenFactory.PARTITIONER_NAME.equals(partitioner)) {
       LOG.debug("[{}] Detected random partitioner ({})", logPrefix, partitioner);
-      return new RandomTokenFactory(partitioner);
-    } else if (partitioner.endsWith("OrderedPartitioner")) {
+      return new RandomTokenFactory();
+    } else if (ByteOrderedTokenFactory.PARTITIONER_NAME.equals(partitioner)) {
       LOG.debug("[{}] Detected byte ordered partitioner ({})", logPrefix, partitioner);
-      return new ByteOrderedTokenFactory(partitioner);
+      return new ByteOrderedTokenFactory();
     } else {
       LOG.warn(
           "[{}] Unsupported partitioner '{}', token map will be empty.", logPrefix, partitioner);
